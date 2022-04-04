@@ -1,0 +1,71 @@
+#!/usr/bin/env bash
+
+RED="\e[31m"
+GREEN="\e[32m"
+BLUE="\e[34m"
+RESET="\e[0m"
+SEPARATOR="${GREEN}-----------------------------------------------${RESET}"
+
+function show_commit() {
+  git -c color.ui=always show "$1" --no-patch --pretty=short
+}
+
+function separator() {
+  echo -e "$SEPARATOR"
+  echo
+}
+
+function error() {
+  echo -e "${RED}$1${RESET}"
+  echo
+}
+
+function message() {
+  echo -e "${GREEN}$1${RESET}"
+}
+
+UPSTREAM=$1
+
+echo
+
+if [ "$UPSTREAM" == "" ]; then
+  echo -e "${RED}No upstream branch given${RESET}\n"
+  exit 1
+fi
+
+BRANCH=`git rev-parse --abbrev-ref HEAD`
+COMMIT=$(git reflog --format="%gs" "$BRANCH" --grep-reflog="rebase .*(finish):" -n 1 | awk '{print $NF}')
+
+if [ "$COMMIT" == "" ]; then
+  # If branch hasn't been rebased, use the original branch point hash
+  COMMIT=$(git reflog --format="%h" | tail -n 1)
+  message "This branch has not been rebased before, using ${BLUE}$COMMIT${GREEN} as the branch base"
+fi
+
+if git merge-base --is-ancestor $COMMIT $UPSTREAM; then
+  error "Upstream branch already appears to contain the base of this branch:"
+  show_commit $COMMIT
+  echo
+  error "A regular rebase should be fine"
+  exit 1
+fi
+
+FIRST_BRANCH_COMMIT=`git rev-list --ancestry-path "$COMMIT"..HEAD | tail -n 1`
+
+echo 
+message "I think this is the orphaned base of your branch (${BLUE}$BRANCH${GREEN})"
+echo
+show_commit $COMMIT
+separator
+message "So you should rebase the first commit in your branch:"
+echo
+show_commit $FIRST_BRANCH_COMMIT
+separator
+message "onto this commit:"
+echo
+show_commit $UPSTREAM
+separator
+message "With the following command:"
+echo
+echo "git rebase --onto ${UPSTREAM} ${COMMIT}"
+echo
